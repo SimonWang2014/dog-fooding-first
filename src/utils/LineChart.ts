@@ -15,6 +15,9 @@ export class LineChart {
 	private minYValue: number;
 	private xAxisLabels: string[];
 	private yAxisLabels: string[];
+	private mouseX: number = -1;
+	private mouseY: number = -1;
+	private hoveredPointIndex: number = -1;
 
 	/**
 	 * 构造函数
@@ -31,9 +34,9 @@ export class LineChart {
 			bottom: 50,
 			left: 60,
 		};
-		this.chartWidth =
+		this.chartWidth = 
 			this.canvas.width - this.padding.left - this.padding.right;
-		this.chartHeight =
+		this.chartHeight = 
 			this.canvas.height - this.padding.top - this.padding.bottom;
 		this.xScale = 0;
 		this.yScale = 0;
@@ -42,6 +45,10 @@ export class LineChart {
 		this.xAxisLabels = [];
 		this.yAxisLabels = [];
 		this.init();
+		
+		// 添加鼠标事件监听器
+		this.canvas.addEventListener('mousemove', this.handleMouseMove.bind(this));
+		this.canvas.addEventListener('mouseleave', this.handleMouseLeave.bind(this));
 	}
 
 	/**
@@ -370,8 +377,29 @@ export class LineChart {
 			titleHeight = titleMetrics.actualBoundingBoxAscent + titleMetrics.actualBoundingBoxDescent;
 		}
 		
-		// 计算图例垂直位置（标题下方，折线图上方）
-		const legendY = this.padding.top / 2 + titleHeight + 10;
+		// 标题底部位置
+		const titleBottom = this.padding.top / 2 + titleHeight;
+		
+		// 图例所需的总高度
+		const legendTotalHeight = this.config.data.length * legendItemHeight;
+		
+		// 折线图顶部位置
+		const chartTop = this.padding.top;
+		
+		// 图例最大可用高度（标题底部到折线图顶部之间的距离减去20px的边距）
+		const availableHeight = chartTop - titleBottom - 20;
+		
+		// 如果可用高度足够容纳图例，则将图例放在标题下方10px
+		// 否则，将图例放在折线图顶部上方10px
+		let legendY = 0;
+		if (availableHeight >= legendTotalHeight) {
+			legendY = titleBottom + 10;
+		} else {
+			legendY = chartTop - legendTotalHeight - 10;
+		}
+		
+		// 确保图例位置不低于0
+		legendY = Math.max(legendY, 0);
 		
 		// 计算图例水平位置
 		let legendX = 0;
@@ -448,14 +476,20 @@ export class LineChart {
 		// 绘制Y轴
 		this.drawYAxis();
 
-		// 绘制折线
-		this.drawLines();
-
 		// 绘制标题
 		this.drawTitle();
 
 		// 绘制图例
 		this.drawLegend();
+
+		// 绘制折线
+		this.drawLines();
+		
+		// 绘制跟踪线和tooltip
+		if (this.hoveredPointIndex !== -1) {
+			this.drawCrosshair();
+			this.drawTooltip();
+		}
 	}
 
 	/**
@@ -468,6 +502,146 @@ export class LineChart {
 		this.draw();
 	}
 
+	/**
+	 * 处理鼠标移动事件
+	 * @param event 鼠标事件
+	 */
+	private handleMouseMove(event: MouseEvent): void {
+		const rect = this.canvas.getBoundingClientRect();
+		this.mouseX = event.clientX - rect.left;
+		this.mouseY = event.clientY - rect.top;
+		
+		// 计算最近的数据点索引
+		this.hoveredPointIndex = this.calculateHoveredPointIndex();
+		
+		// 重新绘制图表
+		this.draw();
+	}
+	
+	/**
+	 * 处理鼠标离开事件
+	 */
+	private handleMouseLeave(): void {
+		this.mouseX = -1;
+		this.mouseY = -1;
+		this.hoveredPointIndex = -1;
+		
+		// 重新绘制图表
+		this.draw();
+	}
+	
+	/**
+	 * 计算最近的数据点索引
+	 * @returns 最近的数据点索引，如果没有数据则返回-1
+	 */
+	private calculateHoveredPointIndex(): number {
+		if (!this.config.data || this.config.data.length === 0 || !this.config.data[0] || !this.config.data[0].values) {
+			return -1;
+		}
+		
+		const pointCount = this.config.data[0].values.length;
+		if (pointCount === 0) {
+			return -1;
+		}
+		
+		// 计算鼠标在图表区域内的X坐标
+		const chartMouseX = this.mouseX - this.padding.left;
+		
+		// 确保鼠标在图表区域内
+		if (chartMouseX < 0 || chartMouseX > this.chartWidth) {
+			return -1;
+		}
+		
+		// 计算最近的数据点索引
+		const index = Math.round(chartMouseX / this.xScale);
+		
+		// 确保索引在有效范围内
+		return Math.max(0, Math.min(index, pointCount - 1));
+	}
+	
+	/**
+	 * 绘制跟踪线
+	 */
+	private drawCrosshair(): void {
+		if (this.hoveredPointIndex === -1) {
+			return;
+		}
+		
+		// 计算跟踪线的X坐标
+		const crosshairX = this.padding.left + this.hoveredPointIndex * this.xScale;
+		
+		// 绘制垂直跟踪线
+		this.ctx.beginPath();
+		this.ctx.moveTo(crosshairX, this.padding.top);
+		this.ctx.lineTo(crosshairX, this.canvas.height - this.padding.bottom);
+		this.ctx.strokeStyle = 'rgba(0, 0, 0, 0.3)';
+		this.ctx.lineWidth = 1;
+		this.ctx.setLineDash([5, 5]);
+		this.ctx.stroke();
+		this.ctx.setLineDash([]);
+	}
+	
+	/**
+	 * 绘制tooltip
+	 */
+	private drawTooltip(): void {
+		if (this.hoveredPointIndex === -1) {
+			return;
+		}
+		
+		// 计算tooltip的位置
+		const tooltipX = this.padding.left + this.hoveredPointIndex * this.xScale;
+		const tooltipY = this.mouseY;
+		
+		// 计算tooltip的内容
+		const xLabel = this.xAxisLabels[this.hoveredPointIndex % this.xAxisLabels.length];
+		const tooltipLines = this.config.data.map((line, index) => {
+			const value = line.values[this.hoveredPointIndex];
+			const formattedValue = value !== undefined ? value.toFixed(this.config.yAxis.decimalPlaces || 0) : 'N/A';
+			return `${line.label}: ${formattedValue}`;
+		});
+		
+		// 计算tooltip的尺寸
+		this.ctx.font = '12px Arial';
+		const lineHeight = 16;
+		const maxLineWidth = Math.max(...tooltipLines.map(line => this.ctx.measureText(line).width));
+		const tooltipWidth = maxLineWidth + 16;
+		const tooltipHeight = tooltipLines.length * lineHeight + 16;
+		
+		// 调整tooltip的位置，确保它在画布内
+		let adjustedTooltipX = tooltipX;
+		let adjustedTooltipY = tooltipY;
+		
+		if (adjustedTooltipX + tooltipWidth > this.canvas.width) {
+			adjustedTooltipX = tooltipX - tooltipWidth;
+		}
+		
+		if (adjustedTooltipY + tooltipHeight > this.canvas.height) {
+			adjustedTooltipY = tooltipY - tooltipHeight;
+		}
+		
+		if (adjustedTooltipY < 0) {
+			adjustedTooltipY = 0;
+		}
+		
+		// 绘制tooltip背景
+		this.ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+		this.ctx.strokeStyle = '#ccc';
+		this.ctx.lineWidth = 1;
+		this.ctx.roundRect(adjustedTooltipX, adjustedTooltipY, tooltipWidth, tooltipHeight, 4);
+		this.ctx.fill();
+		this.ctx.stroke();
+		
+		// 绘制tooltip内容
+		this.ctx.fillStyle = '#333';
+		this.ctx.textAlign = 'left';
+		this.ctx.textBaseline = 'top';
+		
+		tooltipLines.forEach((line, index) => {
+			this.ctx.fillText(line, adjustedTooltipX + 8, adjustedTooltipY + 8 + index * lineHeight);
+		});
+	}
+	
 	/**
 	 * 更新折线图配置
 	 * @param config 新的配置

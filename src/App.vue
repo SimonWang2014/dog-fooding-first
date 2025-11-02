@@ -46,7 +46,7 @@ const chartConfig = ref<LineChartConfig>({
     enabled: true,
     color: '#333',
     fontSize: 12,
-    position: 'top-center'
+    position: 'top-left'
   },
   data: [
     {
@@ -71,11 +71,7 @@ const chartConfig = ref<LineChartConfig>({
 
 <template>
   <div class="app-container">
-    <LineChart
-      :config="chartConfig"
-      :width="1000"
-      :height="500"
-    />
+    <LineChart :config="chartConfig" :width="1000" :height="500" />
   </div>
 </template>
 
