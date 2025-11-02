@@ -1,8 +1,5 @@
-import Vue from 'vue'
+import { createApp } from 'vue'
+import './style.css'
 import App from './App.vue'
-import './uni.promisify.adaptor'
 
-Vue.config.productionTip = false
-
-const app = new (typeof App === 'function' ? App : Vue.extend(Object.assign({ mpType: 'app' }, App)))
-app.$mount();
+createApp(App).mount('#app')
